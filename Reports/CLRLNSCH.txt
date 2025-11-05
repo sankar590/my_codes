@@ -1,1 +1,64 @@
+SELECT
+    a.customer_id                              AS "Customer Id",
+    a.primary_applicant_name                    AS "Customer Name",
+    a.product_category                          AS "Type of Financing",
+    a.product_code                              AS "Product Code",
+    a.account_number                            AS "Account Number",
+    TO_CHAR(a.book_date,'DD-MM-YYYY')                                AS "Grant (Value) Date",
+    TO_CHAR(a.maturity_date,'DD-MM-YYYY')                            AS "Maturity Date",
+    a.no_of_installments                        AS "Number of Installments",
+TO_CHAR(MIN(s.schedule_due_date) ,'DD-MM-YYYY')                 AS "First Installment Date",
+    TO_CHAR(MAX(s.schedule_due_date) ,'DD-MM-YYYY')                AS "Last Installment Date",
+    TRUNC(ROUND(MONTHS_BETWEEN(a.maturity_date, a.book_date))/12)
+    ||' Years '||
+    MOD(ROUND(MONTHS_BETWEEN(a.maturity_date,a.book_date)),12)||' Months' AS "Period",
+NVL(SUM(s.amount_due), 0)                   AS "Total Installment Amount",
+    a.amount_financed                           AS "Principal",
+    NVL(SUM(CASE WHEN s.component_name = 'PROFIT' THEN s.amount_due ELSE 0 END), 0) AS "Profit",
+    a.amount_financed +
+        NVL(SUM(CASE WHEN s.component_name = 'PROFIT' THEN s.amount_due ELSE 0 END), 0)
+                                                 AS "Total Financing"
+    
+FROM
+    cltb_account_apps_master a
+    LEFT JOIN cltb_account_schedules s
+        ON a.account_number = s.account_number
+WHERE
+    a.account_number = :ACC_NO
+GROUP BY
+    a.no_of_installments,
+    a.customer_id,
+    a.primary_applicant_name,
+    a.product_category,
+    a.product_code,
+    a.account_number,
+    a.book_date,
+    a.maturity_date,
+    a.amount_financed
+	
+------------------------------------------------------------
 
+SELECT
+    s.schedule_no                                            AS "Installment No",
+    TO_CHAR(s.schedule_due_date, 'DD-MM-YYYY')               AS "Installment Deduction Date",
+    NVL(SUM(s.amount_due), 0)                                AS "Total Installment",
+    NVL(SUM(CASE WHEN s.component_name = 'PROFIT' THEN s.amount_due ELSE 0 END), 0)
+                                                             AS "Profit Portion of the Installment",
+    NVL(SUM(CASE WHEN s.component_name = 'PRINCIPAL' THEN s.amount_due ELSE 0 END), 0)
+                                                             AS "Principal Portion of the Installment",
+    (SELECT NVL(SUM(s2.amount_due), 0)
+       FROM cltb_account_schedules s2
+      WHERE s2.account_number = s.account_number
+        AND s2.component_name IN ('PRINCIPAL','PROFIT')
+        AND s2.schedule_no >= s.schedule_no)
+                                                             AS "Outstanding Financing"
+FROM
+    cltb_account_schedules s
+WHERE
+    s.account_number = :ACC_NO
+GROUP BY
+    s.account_number,
+    s.schedule_no,
+    s.schedule_due_date
+ORDER BY
+    s.schedule_no
